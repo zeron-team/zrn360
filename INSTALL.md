@@ -1,492 +1,441 @@
-# 🚀 Zeron CRM — Guía de Instalación Completa
+# ZRN360° — Manual de Instalación Completo
 
-> **Versión:** 1.0.0  
-> **Última actualización:** 2026-02-28  
-> **Autor:** Zeron Team  
-
----
-
-## 📑 Índice
-
-1. [Descripción General](#1-descripción-general)
-2. [Arquitectura del Sistema](#2-arquitectura-del-sistema)
-3. [Requisitos Previos](#3-requisitos-previos)
-4. [Instalación del Backend](#4-instalación-del-backend)
-5. [Instalación del Frontend](#5-instalación-del-frontend)
-6. [Configuración de Base de Datos](#6-configuración-de-base-de-datos)
-7. [Configuración del Servidor Web (Apache)](#7-configuración-del-servidor-web-apache)
-8. [Servicio Systemd (Backend como servicio)](#8-servicio-systemd-backend-como-servicio)
-9. [SSL / HTTPS con Let's Encrypt](#9-ssl--https-con-lets-encrypt)
-10. [Despliegue de Producción — Paso a Paso Completo](#10-despliegue-de-producción--paso-a-paso-completo)
-11. [Estructura del Proyecto](#11-estructura-del-proyecto)
-12. [Módulos y Funcionalidades](#12-módulos-y-funcionalidades)
-13. [API Endpoints](#13-api-endpoints)
-14. [Internacionalización (i18n)](#14-internacionalización-i18n)
-15. [Variables de Entorno](#15-variables-de-entorno)
-16. [Comandos Útiles](#16-comandos-útiles)
-17. [Solución de Problemas](#17-solución-de-problemas)
+> **Versión**: 3.0.0  
+> **Plataforma**: CRM / ERP / RRHH — Gestión empresarial integral 360°  
+> **Última actualización**: Marzo 2026
 
 ---
 
-## 1. Descripción General
+## Índice
 
-**Zeron CRM** es un sistema de gestión de relaciones con clientes (CRM) diseñado para empresas de infraestructura y desarrollo de software con enfoque de *software factory*.
-
-### Stack Tecnológico
-
-| Componente | Tecnología | Versión |
-|------------|-----------|---------|
-| **Backend API** | Python + FastAPI + Uvicorn | Python 3.10+ / FastAPI 0.109 |
-| **Frontend** | React + TypeScript + Vite | React 19 / Vite 7 |
-| **Base de Datos** | PostgreSQL | 15+ |
-| **ORM** | SQLAlchemy | 2.0 |
-| **Migraciones** | Alembic | 1.13 |
-| **Autenticación** | JWT (python-jose + bcrypt) | — |
-| **Estilos** | TailwindCSS | 3.4 |
-| **Servidor Web** | Apache 2.4 (reverse proxy) | 2.4 |
-| **SSL** | Let's Encrypt (Certbot) | — |
+1. [Requisitos del Sistema](#1-requisitos-del-sistema)
+2. [Arquitectura General](#2-arquitectura-general)
+3. [Clonar el Repositorio](#3-clonar-el-repositorio)
+4. [Base de Datos — PostgreSQL 15 (Docker)](#4-base-de-datos--postgresql-15-docker)
+5. [Backend — API FastAPI (Python)](#5-backend--api-fastapi-python)
+6. [Frontend — React + Vite](#6-frontend--react--vite)
+7. [WhatsApp Service — Microservicio Node.js](#7-whatsapp-service--microservicio-nodejs)
+8. [Servidor Web — Apache con SSL](#8-servidor-web--apache-con-ssl)
+9. [Servicios Systemd](#9-servicios-systemd)
+10. [SSL con Let's Encrypt](#10-ssl-con-lets-encrypt)
+11. [Primer Inicio y Configuración](#11-primer-inicio-y-configuración)
+12. [Variables de Entorno](#12-variables-de-entorno)
+13. [Estructura del Proyecto](#13-estructura-del-proyecto)
+14. [Comandos Útiles](#14-comandos-útiles)
+15. [Solución de Problemas](#15-solución-de-problemas)
 
 ---
 
-## 2. Arquitectura del Sistema
+## 1. Requisitos del Sistema
+
+### Hardware Mínimo
+| Recurso | Mínimo | Recomendado |
+|---------|--------|-------------|
+| CPU | 2 cores | 4 cores |
+| RAM | 4 GB | 8 GB |
+| Disco | 20 GB SSD | 50 GB SSD |
+
+### Software Requerido
+| Software | Versión | Uso |
+|----------|---------|-----|
+| **Ubuntu** | 22.04 LTS o superior | Sistema operativo |
+| **Python** | 3.10+ | Backend API |
+| **Node.js** | 20.x LTS | Frontend build + WhatsApp service |
+| **Docker** + Docker Compose | Últimas versiones | PostgreSQL |
+| **Apache2** | 2.4+ | Servidor web (reverse proxy + frontend) |
+| **Git** | 2.x | Control de versiones |
+
+---
+
+## 2. Arquitectura General
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        INTERNET                              │
-│                    https://zeron.ovh                          │
-└────────────────────────┬─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Internet (HTTPS :443)                 │
+└────────────────────────┬────────────────────────────────┘
                          │
-                    ┌────▼────┐
-                    │ Apache  │  Puerto 443 (SSL)
-                    │ 2.4     │  Puerto 80 → Redirect HTTPS
-                    └────┬────┘
+                   ┌─────▼─────┐
+                   │  Apache2  │  SSL termination
+                   │  (proxy)  │  + SPA fallback
+                   └─────┬─────┘
                          │
           ┌──────────────┼──────────────┐
           │              │              │
-    /api/v1/*      /uploads/*     /* (Archivos estáticos)
-    /health        /docs          SPA Fallback → index.html
-    /openapi.json
+    /api/v1/*      / (static)    /ws (websocket)
           │              │              │
-    ┌─────▼──────┐       │     ┌────────▼────────┐
-    │ Uvicorn    │       │     │ Frontend Build   │
-    │ FastAPI    │◄──────┘     │ /var/www/html/   │
-    │ :8000      │             │ zeron-crm/       │
-    └─────┬──────┘             └─────────────────┘
-          │
-    ┌─────▼──────┐
-    │ PostgreSQL │
-    │ :5432      │
-    │ zeron_crm  │
-    └────────────┘
+   ┌──────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐
+   │   FastAPI   │ │  React    │ │ WhatsApp  │
+   │   :8000     │ │  (dist/)  │ │  :3001    │
+   │   Backend   │ │  Frontend │ │  Service  │
+   └──────┬──────┘ └───────────┘ └─────┬─────┘
+          │                            │
+          └────────────┬───────────────┘
+                       │
+                ┌──────▼──────┐
+                │ PostgreSQL  │
+                │ :5432       │
+                │ (Docker)    │
+                └─────────────┘
 ```
-
-### Flujo de peticiones:
-1. El usuario accede a `https://zeron.ovh`
-2. Apache sirve los archivos estáticos del frontend (SPA React)
-3. Las peticiones a `/api/v1/*` son redirigidas (reverse proxy) a Uvicorn en `127.0.0.1:8000`
-4. FastAPI procesa la petición, consulta PostgreSQL y responde JSON
-5. El frontend React renderiza la respuesta en el navegador
 
 ---
 
-## 3. Requisitos Previos
-
-### Sistema Operativo
-- **Ubuntu 22.04 LTS** (o superior)
-
-### Software necesario
+## 3. Clonar el Repositorio
 
 ```bash
-# Actualizar el sistema
-sudo apt update && sudo apt upgrade -y
+# Clonar desde GitHub
+git clone https://github.com/zeron-team/zrn360.git /home/ubuntu/zrn-crm
+cd /home/ubuntu/zrn-crm
+```
 
-# Instalar Python 3.10+
+---
+
+## 4. Base de Datos — PostgreSQL 15 (Docker)
+
+### 4.1 Instalar Docker
+
+```bash
+# Instalar Docker
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+# Cerrar sesión y volver a entrar para que el grupo tome efecto
+```
+
+### 4.2 Levantar PostgreSQL
+
+El proyecto incluye un `docker-compose.yml` en la raíz:
+
+```bash
+cd /home/ubuntu/zrn-crm
+docker compose up -d
+```
+
+Contenido del `docker-compose.yml`:
+```yaml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: zeron_crm_db
+    restart: always
+    environment:
+      POSTGRES_USER: zeron_user
+      POSTGRES_PASSWORD: zeron_password
+      POSTGRES_DB: zeron_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+```
+
+### 4.3 Verificar conexión
+
+```bash
+docker exec -it zeron_crm_db psql -U zeron_user -d zeron_crm -c "SELECT 1;"
+```
+
+> **IMPORTANTE**: En producción, cambiar `POSTGRES_PASSWORD` por una contraseña segura y actualizar el `.env` del backend acorde.
+
+---
+
+## 5. Backend — API FastAPI (Python)
+
+### 5.1 Instalar Python 3.10+
+
+```bash
 sudo apt install -y python3 python3-pip python3-venv
-
-# Instalar Node.js 20+ y npm
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Instalar PostgreSQL 15
-sudo apt install -y postgresql postgresql-contrib
-
-# Instalar Apache 2.4
-sudo apt install -y apache2
-
-# Instalar Git
-sudo apt install -y git
-
-# Instalar Certbot (para SSL)
-sudo apt install -y certbot python3-certbot-apache
+python3 --version  # Debe ser 3.10+
 ```
 
-### Verificar versiones instaladas
-
-```bash
-python3 --version    # Debe ser 3.10+
-node --version       # Debe ser 20+
-npm --version        # Debe ser 10+
-psql --version       # Debe ser 15+
-apache2 -v           # Debe ser 2.4+
-git --version        # Cualquier versión reciente
-```
-
----
-
-## 4. Instalación del Backend
-
-### 4.1 Clonar el repositorio
-
-```bash
-cd /home/ubuntu
-mkdir -p zrn-crm
-git clone https://github.com/zeron-team/zrn-crm-be.git zrn-crm/backend
-```
-
-### 4.2 Crear el entorno virtual de Python
+### 5.2 Crear entorno virtual
 
 ```bash
 cd /home/ubuntu/zrn-crm/backend
 python3 -m venv venv
-```
-
-### 4.3 Activar el entorno virtual
-
-```bash
 source venv/bin/activate
 ```
 
-### 4.4 Instalar dependencias
+### 5.3 Instalar dependencias
 
 ```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-#### Dependencias principales:
+Dependencias principales:
+- **FastAPI** — Framework web
+- **Uvicorn** — Servidor ASGI
+- **SQLAlchemy 2.0** — ORM
+- **python-jose** — JWT tokens
+- **zeep** — Cliente SOAP para ARCA/AFIP
+- **httpx** — Cliente HTTP async
+- **psycopg2-binary** — Driver PostgreSQL
+- **Pillow** — Procesamiento de imágenes
+- **openpyxl** — Exportación Excel
+- **reportlab** — Generación PDF
 
-| Paquete | Función |
-|---------|---------|
-| `fastapi` | Framework web API REST |
-| `uvicorn` | Servidor ASGI para FastAPI |
-| `sqlalchemy` | ORM para PostgreSQL |
-| `alembic` | Migraciones de base de datos |
-| `psycopg2-binary` | Driver PostgreSQL para Python |
-| `python-jose` | Generación y validación de tokens JWT |
-| `passlib` + `bcrypt` | Hash seguro de contraseñas |
-| `pydantic` | Validación de datos y schemas |
-| `pydantic-settings` | Configuración desde variables de entorno |
-| `python-dotenv` | Carga de archivos `.env` |
-| `python-multipart` | Subida de archivos (multipart/form-data) |
-| `email-validator` | Validación de emails |
-
-### 4.5 Configurar variables de entorno
-
-Crear el archivo `/home/ubuntu/zrn-crm/backend/.env`:
+### 5.4 Configurar variables de entorno
 
 ```bash
 cat > /home/ubuntu/zrn-crm/backend/.env << 'EOF'
-DATABASE_URL=postgresql://zeron_user:TU_PASSWORD_SEGURA@localhost:5432/zeron_crm
-SECRET_KEY=GENERA_UN_SECRET_KEY_ALEATORIO_AQUI
+DATABASE_URL=postgresql://zeron_user:zeron_password@localhost:5432/zeron_crm
+SECRET_KEY=CAMBIAR_POR_UNA_CLAVE_SEGURA_DE_64_CARACTERES
 ACCESS_TOKEN_EXPIRE_MINUTES=480
 EOF
 ```
 
-> ⚠️ **IMPORTANTE:** Genera un `SECRET_KEY` seguro con:
+> **Para generar un SECRET_KEY seguro:**
 > ```bash
 > python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 > ```
 
-### 4.6 Verificar que el backend carga correctamente
+### 5.5 Crear las tablas en la base de datos
 
 ```bash
 cd /home/ubuntu/zrn-crm/backend
 source venv/bin/activate
-python3 -c "import app.main; print('✅ Backend OK')"
+python3 -c "
+from app.database import engine, Base
+Base.metadata.create_all(bind=engine)
+print('Tablas creadas exitosamente')
+"
 ```
+
+### 5.6 Crear usuario administrador
+
+```bash
+python3 -c "
+from app.database import SessionLocal
+from app.models.user import User
+from passlib.context import CryptContext
+
+pwd = CryptContext(schemes=['bcrypt'])
+db = SessionLocal()
+
+admin = User(
+    email='admin@zeron.ovh',
+    full_name='Administrador',
+    hashed_password=pwd.hash('Admin123!'),
+    role='admin',
+    is_active=True
+)
+db.add(admin)
+db.commit()
+print(f'Usuario admin creado: admin@zeron.ovh')
+db.close()
+"
+```
+
+### 5.7 Crear directorio de uploads
+
+```bash
+mkdir -p /home/ubuntu/zrn-crm/backend/uploads/invoices
+```
+
+### 5.8 Verificar que el backend funciona
+
+```bash
+cd /home/ubuntu/zrn-crm/backend
+source venv/bin/activate
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# En otra terminal:
+curl http://localhost:8000/health
+# Respuesta esperada: {"status":"ok","message":"Zeron CRM API is running"}
+```
+
+Detener con `Ctrl+C` tras verificar.
 
 ---
 
-## 5. Instalación del Frontend
+## 6. Frontend — React + Vite
 
-### 5.1 Clonar el repositorio
+### 6.1 Instalar Node.js 20 LTS
 
 ```bash
-cd /home/ubuntu/zrn-crm
-git clone https://github.com/zeron-team/zrn-crm-fe.git frontend
+# Opción A: Usando nvm (recomendado)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
+nvm install 20
+nvm use 20
+node -v  # Debe ser v20.x
+
+# Opción B: Usando NodeSource
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
 ```
 
-### 5.2 Instalar dependencias
+### 6.2 Instalar dependencias
 
 ```bash
 cd /home/ubuntu/zrn-crm/frontend
 npm install
 ```
 
-#### Dependencias principales:
+Dependencias principales:
+- **React 19** — UI framework
+- **React Router DOM 7** — Routing SPA
+- **Recharts 3** — Gráficos y dashboards
+- **Lucide React** — Iconos
+- **Axios** — Cliente HTTP
+- **i18next** — Internacionalización ES/EN
+- **@dnd-kit** — Drag & drop (Kanban)
+- **date-fns** — Manipulación de fechas
 
-| Paquete | Función |
-|---------|---------|
-| `react` + `react-dom` | Librería UI principal |
-| `react-router-dom` | Enrutamiento SPA |
-| `axios` | Cliente HTTP para consumir la API |
-| `recharts` | Gráficos y visualizaciones |
-| `lucide-react` | Iconografía moderna |
-| `i18next` + `react-i18next` | Internacionalización (ES/EN) |
-| `@dnd-kit/core` + `@dnd-kit/sortable` | Drag & Drop para widgets del dashboard |
-| `date-fns` | Manipulación de fechas |
-| `tailwindcss` | Framework CSS utility-first |
-| `typescript` | Tipado estático |
-| `vite` | Bundler y dev server |
+### 6.3 Configurar API URL (opcional)
 
-### 5.3 Build de producción
+Si el backend corre en otro host/puerto, editar `frontend/src/api/client.ts`:
+```typescript
+const api = axios.create({
+    baseURL: '/api/v1',  // Usa proxy Apache
+});
+```
+
+### 6.4 Build de producción
 
 ```bash
 cd /home/ubuntu/zrn-crm/frontend
-npm run build
-```
 
-Esto genera la carpeta `dist/` con los archivos estáticos optimizados:
-```
-dist/
-├── index.html           # Punto de entrada SPA
-├── favicon.svg          # Ícono
-├── vite.svg             # Ícono Vite
-└── assets/
-    ├── index-XXXX.js    # JavaScript minificado
-    └── index-XXXX.css   # CSS minificado
-```
+# IMPORTANTE: Si el servidor tiene <8GB RAM, detener el API antes de compilar
+sudo systemctl stop zeron-crm-api.service 2>/dev/null
 
-### 5.4 Desplegar el build en el servidor web
+# Compilar
+NODE_OPTIONS="--max-old-space-size=3072" npm run build
 
-```bash
-sudo rm -rf /var/www/html/zeron-crm/*
-sudo cp -r /home/ubuntu/zrn-crm/frontend/dist/* /var/www/html/zeron-crm/
-sudo chown -R www-data:www-data /var/www/html/zeron-crm/
-```
-
-### 5.5 Configuración del cliente API (`src/api/client.ts`)
-
-El frontend detecta automáticamente el entorno:
-
-```typescript
-// En producción: usa el reverse proxy de Apache en /api/v1
-// En desarrollo: apunta directamente a localhost:8000
-const baseURL = import.meta.env.DEV
-    ? `http://${window.location.hostname || "localhost"}:8000/api/v1`
-    : "/api/v1";
-```
-
-**No requiere configuración manual** para producción.
-
----
-
-## 6. Configuración de Base de Datos
-
-### 6.1 Crear usuario y base de datos en PostgreSQL
-
-```bash
-# Acceder a PostgreSQL como superusuario
-sudo -u postgres psql
-```
-
-Dentro de la consola `psql`:
-
-```sql
--- Crear usuario
-CREATE USER zeron_user WITH PASSWORD 'TU_PASSWORD_SEGURA';
-
--- Crear base de datos
-CREATE DATABASE zeron_crm OWNER zeron_user;
-
--- Otorgar privilegios
-GRANT ALL PRIVILEGES ON DATABASE zeron_crm TO zeron_user;
-
--- Salir
-\q
-```
-
-### 6.2 Ejecutar migraciones con Alembic
-
-```bash
-cd /home/ubuntu/zrn-crm/backend
-source venv/bin/activate
-alembic upgrade head
-```
-
-Esto creará todas las tablas necesarias en la base de datos.
-
-### 6.3 Crear el primer usuario administrador
-
-```bash
-cd /home/ubuntu/zrn-crm/backend
-source venv/bin/activate
-python3 -c "
-from app.database import SessionLocal
-from app.models.user import User
-from app.core.security import get_password_hash
-
-db = SessionLocal()
-admin = User(
-    email='admin@tudominio.com',
-    full_name='Administrador',
-    hashed_password=get_password_hash('TuPasswordSegura123'),
-    is_active=True,
-    role='admin'
-)
-db.add(admin)
-db.commit()
-print('✅ Usuario admin creado exitosamente')
-db.close()
-"
-```
-
-> ⚠️ Reemplaza `admin@tudominio.com` y `TuPasswordSegura123` con tus credenciales.
-
-### 6.4 Tablas de la base de datos
-
-El sistema utiliza las siguientes tablas:
-
-| Tabla | Descripción |
-|-------|-------------|
-| `users` | Usuarios del sistema (autenticación) |
-| `clients` | Empresas cliente |
-| `contacts` | Contactos asociados a clientes |
-| `providers` | Proveedores de servicios |
-| `products` | Productos/Servicios/Mano de obra |
-| `families` | Familias de categorías |
-| `categories` | Categorías de productos |
-| `subcategories` | Subcategorías |
-| `invoices` | Facturas emitidas y recibidas |
-| `invoice_statuses` | Estados de facturas (personalizables) |
-| `invoice_items` | Ítems de facturas |
-| `quotes` | Presupuestos / Cotizaciones |
-| `quote_items` | Ítems de presupuestos |
-| `leads` | Leads / Prospectos |
-| `calendar_events` | Eventos del calendario |
-| `activity_notes` | Notas de actividad (por evento) |
-| `client_services` | Servicios contratados por clientes |
-| `provider_services` | Servicios contratados a proveedores |
-| `service_payments` | Pagos de servicios |
-| `dashboard_configs` | Configuración de widgets del dashboard (por usuario) |
-
----
-
-## 7. Configuración del Servidor Web (Apache)
-
-### 7.1 Habilitar módulos necesarios
-
-```bash
-sudo a2enmod proxy
-sudo a2enmod proxy_http
-sudo a2enmod rewrite
-sudo a2enmod ssl
-sudo a2enmod headers
-```
-
-### 7.2 Crear directorio del frontend
-
-```bash
+# Copiar al directorio web
 sudo mkdir -p /var/www/html/zeron-crm
-sudo chown -R www-data:www-data /var/www/html/zeron-crm
+sudo rm -rf /var/www/html/zeron-crm/*
+sudo cp -r dist/* /var/www/html/zeron-crm/
+sudo chown -R www-data:www-data /var/www/html/zeron-crm/
+
+# Reiniciar el API si lo detuvimos
+sudo systemctl start zeron-crm-api.service
 ```
 
-### 7.3 Configuración VirtualHost HTTP (puerto 80)
+> **⚠️ NOTA SOBRE MEMORIA**: El build de Vite puede consumir ~2-3GB de RAM. En servidores con poca memoria, detener servicios no esenciales y agregar swap:
+> ```bash
+> sudo fallocate -l 2G /swapfile
+> sudo chmod 600 /swapfile
+> sudo mkswap /swapfile
+> sudo swapon /swapfile
+> echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+> ```
 
-Crear `/etc/apache2/sites-available/zeron-crm.conf`:
+### 6.5 Desarrollo local
 
-```apache
+```bash
+cd /home/ubuntu/zrn-crm/frontend
+npm run dev
+# Abre en http://localhost:5173
+```
+
+---
+
+## 7. WhatsApp Service — Microservicio Node.js
+
+### 7.1 Instalar dependencias
+
+```bash
+cd /home/ubuntu/zrn-crm/whatsapp-service
+npm install
+```
+
+### 7.2 Instalar Chromium (requerido por whatsapp-web.js)
+
+```bash
+sudo apt install -y chromium-browser
+# O instalar Puppeteer's Chromium:
+npx puppeteer browsers install chrome
+```
+
+### 7.3 Crear tablas de WhatsApp en la DB
+
+El servicio crea las tablas automáticamente al iniciar (`wa_conversations`, `wa_messages`).
+
+### 7.4 Verificar que funciona
+
+```bash
+cd /home/ubuntu/zrn-crm/whatsapp-service
+node server.js
+# Debe iniciar en puerto 3001
+# Escanear QR desde http://localhost:3001/qr
+```
+
+Detener con `Ctrl+C`.
+
+---
+
+## 8. Servidor Web — Apache con SSL
+
+### 8.1 Instalar Apache y módulos
+
+```bash
+sudo apt install -y apache2
+sudo a2enmod ssl rewrite proxy proxy_http proxy_wstunnel headers
+sudo systemctl restart apache2
+```
+
+### 8.2 Crear el VirtualHost
+
+```bash
+sudo tee /etc/apache2/sites-available/zrn360.conf << 'EOF'
 <VirtualHost *:80>
-    ServerAdmin admin@tudominio.com
-    ServerName tudominio.com
-    DocumentRoot /var/www/html/zeron-crm
-
-    # Reverse proxy para la API
-    ProxyPreserveHost On
-    ProxyPass /api/v1/ http://127.0.0.1:8000/api/v1/
-    ProxyPassReverse /api/v1/ http://127.0.0.1:8000/api/v1/
-
-    # Proxy para health check
-    ProxyPass /health http://127.0.0.1:8000/health
-    ProxyPassReverse /health http://127.0.0.1:8000/health
-
-    # Proxy para archivos subidos
-    ProxyPass /uploads/ http://127.0.0.1:8000/uploads/
-    ProxyPassReverse /uploads/ http://127.0.0.1:8000/uploads/
-
-    # Proxy para documentación de la API (Swagger)
-    ProxyPass /docs http://127.0.0.1:8000/docs
-    ProxyPassReverse /docs http://127.0.0.1:8000/docs
-    ProxyPass /openapi.json http://127.0.0.1:8000/openapi.json
-    ProxyPassReverse /openapi.json http://127.0.0.1:8000/openapi.json
-
-    # Archivos estáticos del frontend
-    <Directory /var/www/html/zeron-crm>
-        Options -Indexes +FollowSymLinks
-        AllowOverride None
-        Require all granted
-
-        # SPA fallback: servir index.html para todas las rutas no-archivo
-        RewriteEngine On
-        RewriteBase /
-        RewriteRule ^index\.html$ - [L]
-        RewriteCond %{REQUEST_FILENAME} !-f
-        RewriteCond %{REQUEST_FILENAME} !-d
-        RewriteRule . /index.html [L]
-    </Directory>
-
-    ErrorLog ${APACHE_LOG_DIR}/zeron_crm_error.log
-    CustomLog ${APACHE_LOG_DIR}/zeron_crm_access.log combined
-
-    # Redirección a HTTPS (descomentar después de configurar SSL)
-    # RewriteCond %{SERVER_NAME} =tudominio.com
-    # RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
+    ServerName TU_DOMINIO.com
+    RewriteEngine On
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}$1 [R=301,L]
 </VirtualHost>
+EOF
 ```
 
-### 7.4 Configuración VirtualHost HTTPS (puerto 443)
+### 8.3 Crear el VirtualHost SSL (después de configurar SSL en paso 10)
 
-Crear `/etc/apache2/sites-available/zeron-crm-le-ssl.conf`:
-
-```apache
+```bash
+sudo tee /etc/apache2/sites-available/zrn360-ssl.conf << 'CONF'
 <IfModule mod_ssl.c>
 <VirtualHost *:443>
-    ServerAdmin admin@tudominio.com
-    ServerName tudominio.com
+    ServerAdmin admin@TU_DOMINIO.com
+    ServerName TU_DOMINIO.com
     DocumentRoot /var/www/html/zeron-crm
 
-    # No cachear index.html para que los nuevos builds se reflejen inmediatamente
+    # No cachear index.html para que los nuevos builds se apliquen inmediatamente
     <FilesMatch "index\.html$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
         Header set Expires "0"
     </FilesMatch>
 
-    # Reverse proxy para la API
+    # Reverse proxy para la API backend (FastAPI)
     ProxyPreserveHost On
     ProxyPass /api/v1/ http://127.0.0.1:8000/api/v1/
     ProxyPassReverse /api/v1/ http://127.0.0.1:8000/api/v1/
 
-    # Proxy para health check
+    # Health check
     ProxyPass /health http://127.0.0.1:8000/health
     ProxyPassReverse /health http://127.0.0.1:8000/health
 
-    # Proxy para archivos subidos
+    # Archivos subidos (facturas PDF, etc.)
     ProxyPass /uploads/ http://127.0.0.1:8000/uploads/
     ProxyPassReverse /uploads/ http://127.0.0.1:8000/uploads/
 
-    # Proxy para documentación de la API
+    # Documentación API (Swagger UI)
     ProxyPass /docs http://127.0.0.1:8000/docs
     ProxyPassReverse /docs http://127.0.0.1:8000/docs
     ProxyPass /openapi.json http://127.0.0.1:8000/openapi.json
     ProxyPassReverse /openapi.json http://127.0.0.1:8000/openapi.json
 
-    # Archivos estáticos del frontend
+    # Archivos estáticos del frontend (React SPA)
     <Directory /var/www/html/zeron-crm>
         Options -Indexes +FollowSymLinks
         AllowOverride None
         Require all granted
 
-        # SPA fallback
+        # SPA fallback: sirve index.html para todas las rutas que no sean archivos
         RewriteEngine On
         RewriteBase /
         RewriteRule ^index\.html$ - [L]
@@ -495,37 +444,39 @@ Crear `/etc/apache2/sites-available/zeron-crm-le-ssl.conf`:
         RewriteRule . /index.html [L]
     </Directory>
 
-    ErrorLog ${APACHE_LOG_DIR}/zeron_crm_error.log
-    CustomLog ${APACHE_LOG_DIR}/zeron_crm_access.log combined
+    ErrorLog ${APACHE_LOG_DIR}/zrn360_error.log
+    CustomLog ${APACHE_LOG_DIR}/zrn360_access.log combined
 
-    SSLCertificateFile /etc/letsencrypt/live/tudominio.com/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/tudominio.com/privkey.pem
+    # Certificados SSL (configurados por Certbot)
+    SSLCertificateFile /etc/letsencrypt/live/TU_DOMINIO.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/TU_DOMINIO.com/privkey.pem
     Include /etc/letsencrypt/options-ssl-apache.conf
 </VirtualHost>
 </IfModule>
+CONF
 ```
 
-### 7.5 Habilitar los sitios y reiniciar Apache
+### 8.4 Habilitar el sitio
 
 ```bash
-sudo a2ensite zeron-crm.conf
-sudo a2ensite zeron-crm-le-ssl.conf
-sudo a2dissite 000-default.conf    # Deshabilitar sitio por defecto (opcional)
-sudo apache2ctl configtest         # Verificar configuración
-sudo systemctl restart apache2
+sudo a2ensite zrn360.conf zrn360-ssl.conf
+sudo a2dissite 000-default.conf
+sudo apache2ctl configtest  # Debe decir "Syntax OK"
+sudo systemctl reload apache2
 ```
 
 ---
 
-## 8. Servicio Systemd (Backend como servicio)
+## 9. Servicios Systemd
 
-### 8.1 Crear el archivo de servicio
+### 9.1 Servicio del Backend API
 
 ```bash
-sudo tee /etc/systemd/system/zeron-crm-api.service > /dev/null << 'EOF'
+sudo tee /etc/systemd/system/zeron-crm-api.service << 'EOF'
 [Unit]
-Description=Zeron CRM API (FastAPI + Uvicorn)
-After=network.target postgresql.service docker.service
+Description=ZRN360 API (FastAPI + Uvicorn)
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
@@ -542,57 +493,73 @@ WantedBy=multi-user.target
 EOF
 ```
 
-#### Parámetros del servicio:
+### 9.2 Servicio de WhatsApp
 
-| Parámetro | Valor | Descripción |
-|-----------|-------|-------------|
-| `User` | `ubuntu` | Usuario del sistema que ejecuta el proceso |
-| `WorkingDirectory` | `/home/ubuntu/zrn-crm/backend` | Directorio de trabajo |
-| `EnvironmentFile` | `.env` | Archivo con variables de entorno |
-| `ExecStart` | `uvicorn app.main:app` | Comando para iniciar la API |
-| `--host` | `127.0.0.1` | Solo escucha en localhost (Apache maneja el tráfico externo) |
-| `--port` | `8000` | Puerto interno de la API |
-| `Restart` | `always` | Se reinicia automáticamente si se cae |
-| `RestartSec` | `5` | Espera 5 segundos antes de reiniciar |
+```bash
+sudo tee /etc/systemd/system/zeron-whatsapp.service << 'EOF'
+[Unit]
+Description=ZRN360 WhatsApp Service
+After=network.target docker.service
 
-### 8.2 Habilitar e iniciar el servicio
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/zrn-crm/whatsapp-service
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+Environment=NODE_ENV=production
+Environment=HOME=/home/ubuntu
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+> **Nota**: Ajustar la ruta de `node` en `ExecStart` si se usa nvm:
+> ```bash
+> # Encontrar la ruta correcta:
+> which node
+> # Ejemplo: /home/ubuntu/.nvm/versions/node/v20.19.5/bin/node
+> ```
+
+### 9.3 Habilitar e iniciar servicios
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable zeron-crm-api.service    # Arranque automático al boot
-sudo systemctl start zeron-crm-api.service     # Iniciar ahora
+sudo systemctl enable --now zeron-crm-api.service
+sudo systemctl enable --now zeron-whatsapp.service
 ```
 
-### 8.3 Verificar el estado
+### 9.4 Verificar servicios
 
 ```bash
 sudo systemctl status zeron-crm-api.service
-```
-
-Debe mostrar: `Active: active (running)`
-
-### 8.4 Verificar que la API responde
-
-```bash
-curl http://127.0.0.1:8000/health
-# Respuesta esperada: {"status":"ok","message":"Zeron CRM API is running"}
+sudo systemctl status zeron-whatsapp.service
 ```
 
 ---
 
-## 9. SSL / HTTPS con Let's Encrypt
+## 10. SSL con Let's Encrypt
 
-### 9.1 Obtener certificado SSL
+### 10.1 Instalar Certbot
 
 ```bash
-sudo certbot --apache -d tudominio.com
+sudo apt install -y certbot python3-certbot-apache
 ```
 
-Certbot configurará automáticamente el SSL y creará la redirección HTTP → HTTPS.
+### 10.2 Obtener certificado
 
-### 9.2 Renovación automática
+```bash
+sudo certbot --apache -d TU_DOMINIO.com
+```
 
-Certbot instala un timer automático. Verificar:
+Certbot configura automáticamente los certificados y la renovación.
+
+### 10.3 Verificar renovación automática
 
 ```bash
 sudo certbot renew --dry-run
@@ -600,676 +567,304 @@ sudo certbot renew --dry-run
 
 ---
 
-## 10. Despliegue de Producción — Paso a Paso Completo
+## 11. Primer Inicio y Configuración
 
-### Resumen ejecutivo (todos los pasos en orden)
+### 11.1 Verificar que todo funciona
 
 ```bash
-# ═══════════════════════════════════════════════════
-# PASO 1: Preparar el sistema
-# ═══════════════════════════════════════════════════
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3 python3-pip python3-venv postgresql postgresql-contrib \
-    apache2 git certbot python3-certbot-apache
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+# 1. Base de datos
+docker ps | grep zeron_crm_db
 
-# ═══════════════════════════════════════════════════
-# PASO 2: Configurar PostgreSQL
-# ═══════════════════════════════════════════════════
-sudo -u postgres psql -c "CREATE USER zeron_user WITH PASSWORD 'TU_PASSWORD_SEGURA';"
-sudo -u postgres psql -c "CREATE DATABASE zeron_crm OWNER zeron_user;"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE zeron_crm TO zeron_user;"
+# 2. Backend API
+curl http://localhost:8000/health
 
-# ═══════════════════════════════════════════════════
-# PASO 3: Clonar repositorios
-# ═══════════════════════════════════════════════════
-mkdir -p /home/ubuntu/zrn-crm
-cd /home/ubuntu/zrn-crm
-git clone https://github.com/zeron-team/zrn-crm-be.git backend
-git clone https://github.com/zeron-team/zrn-crm-fe.git frontend
+# 3. Frontend (en el navegador)
+# https://TU_DOMINIO.com
 
-# ═══════════════════════════════════════════════════
-# PASO 4: Configurar Backend
-# ═══════════════════════════════════════════════════
-cd /home/ubuntu/zrn-crm/backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Crear archivo .env
-cat > .env << 'ENVEOF'
-DATABASE_URL=postgresql://zeron_user:TU_PASSWORD_SEGURA@localhost:5432/zeron_crm
-SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
-ACCESS_TOKEN_EXPIRE_MINUTES=480
-ENVEOF
-
-# Ejecutar migraciones
-alembic upgrade head
-
-# Crear usuario admin
-python3 -c "
-from app.database import SessionLocal
-from app.models.user import User
-from app.core.security import get_password_hash
-db = SessionLocal()
-admin = User(email='admin@tudominio.com', full_name='Administrador',
-    hashed_password=get_password_hash('TuPasswordSegura123'),
-    is_active=True, role='admin')
-db.add(admin)
-db.commit()
-print('✅ Usuario admin creado')
-db.close()
-"
-
-deactivate  # Salir del venv
-
-# ═══════════════════════════════════════════════════
-# PASO 5: Configurar Frontend
-# ═══════════════════════════════════════════════════
-cd /home/ubuntu/zrn-crm/frontend
-npm install
-npm run build
-
-# Desplegar build de producción
-sudo mkdir -p /var/www/html/zeron-crm
-sudo cp -r dist/* /var/www/html/zeron-crm/
-sudo chown -R www-data:www-data /var/www/html/zeron-crm
-
-# ═══════════════════════════════════════════════════
-# PASO 6: Configurar Apache
-# ═══════════════════════════════════════════════════
-sudo a2enmod proxy proxy_http rewrite ssl headers
-
-# Crear los archivos de VirtualHost (ver sección 7.3 y 7.4 de este documento)
-# ...
-
-sudo a2ensite zeron-crm.conf
-sudo apache2ctl configtest
-sudo systemctl restart apache2
-
-# ═══════════════════════════════════════════════════
-# PASO 7: Configurar servicio systemd
-# ═══════════════════════════════════════════════════
-# Crear el archivo de servicio (ver sección 8.1)
-# ...
-
-sudo systemctl daemon-reload
-sudo systemctl enable zeron-crm-api.service
-sudo systemctl start zeron-crm-api.service
-
-# ═══════════════════════════════════════════════════
-# PASO 8: Configurar SSL
-# ═══════════════════════════════════════════════════
-sudo certbot --apache -d tudominio.com
-
-# ═══════════════════════════════════════════════════
-# PASO 9: Verificar todo
-# ═══════════════════════════════════════════════════
-curl http://127.0.0.1:8000/health
-curl -s -o /dev/null -w "%{http_code}" https://tudominio.com/
-curl https://tudominio.com/api/v1/users/
-sudo systemctl status zeron-crm-api.service
+# 4. WhatsApp
+curl http://localhost:3001/status 2>/dev/null || echo "WhatsApp service no iniciado"
 ```
+
+### 11.2 Primer login
+
+1. Abrir `https://TU_DOMINIO.com` en el navegador
+2. Iniciar sesión con las credenciales del administrador creado en el paso 5.6
+3. Ir a **Sistema → Configuración** para ajustar parámetros
+
+### 11.3 Configurar ARCA/AFIP (facturación electrónica)
+
+Para la integración con ARCA se requiere:
+1. **Certificado digital** (`.crt`) y **clave privada** (`.key`) de ARCA/AFIP
+2. **CUIT** de la empresa
+3. **Punto de venta** autorizado
+4. Subir los certificados desde **Configuración → ARCA**
+
+> Los certificados se obtienen desde el sitio de ARCA/AFIP con clave fiscal nivel 3+.
 
 ---
 
-## 11. Estructura del Proyecto
+## 12. Variables de Entorno
 
-### Backend (`zrn-crm-be`)
-
-```
-backend/
-├── .env                          # Variables de entorno (NO subir a git)
-├── .gitignore                    # Archivos ignorados por git
-├── requirements.txt              # Dependencias Python
-├── alembic.ini                   # Configuración de Alembic
-├── alembic/                      # Migraciones de base de datos
-│   ├── env.py                    # Entorno de Alembic
-│   ├── script.py.mako            # Template para migraciones
-│   └── versions/                 # Archivos de migración
-│       ├── a73fdedb117b_initial_schema_users.py
-│       ├── c3badb8a57f5_add_core_crm_models.py
-│       ├── 850273da1825_add_lead_module.py
-│       ├── 8957c3971604_add_quotes_module.py
-│       └── ... (más migraciones)
-├── uploads/                      # Archivos subidos
-│   ├── invoices/                 # PDFs de facturas
-│   └── service_payments/         # Comprobantes de pago
-└── app/                          # Código fuente principal
-    ├── main.py                   # Punto de entrada FastAPI
-    ├── database.py               # Conexión a BD y Base declarativa
-    ├── core/
-    │   ├── config.py             # Configuración (Settings con Pydantic)
-    │   └── security.py           # Hash passwords, JWT tokens
-    ├── models/                   # Modelos SQLAlchemy (tablas)
-    │   ├── __init__.py           # Exporta todos los modelos
-    │   ├── user.py               # Modelo User
-    │   ├── client.py             # Modelo Client
-    │   ├── contact.py            # Modelo Contact
-    │   ├── provider.py           # Modelo Provider
-    │   ├── product.py            # Modelo Product
-    │   ├── category.py           # Modelos Family, Category, Subcategory
-    │   ├── invoice.py            # Modelos Invoice, InvoiceStatus
-    │   ├── invoice_item.py       # Modelo InvoiceItem
-    │   ├── quote.py              # Modelo Quote
-    │   ├── quote_item.py         # Modelo QuoteItem
-    │   ├── lead.py               # Modelo Lead
-    │   ├── calendar.py           # Modelo CalendarEvent
-    │   ├── activity_note.py      # Modelo ActivityNote
-    │   ├── client_service.py     # Modelo ClientService
-    │   ├── provider_service.py   # Modelo ProviderService
-    │   ├── service_payment.py    # Modelo ServicePayment
-    │   └── dashboard_config.py   # Modelo DashboardConfig
-    ├── schemas/                  # Schemas Pydantic (validación)
-    │   ├── user.py
-    │   ├── client.py
-    │   ├── contact.py
-    │   ├── provider.py
-    │   ├── product.py
-    │   ├── category.py
-    │   ├── invoice.py
-    │   ├── quote.py
-    │   ├── lead.py
-    │   ├── calendar.py
-    │   ├── client_service.py
-    │   ├── provider_service.py
-    │   ├── service_payment.py
-    │   └── dashboard_config.py
-    ├── repositories/             # Capa de acceso a datos
-    │   ├── user.py
-    │   ├── client.py
-    │   ├── contact.py
-    │   ├── provider.py
-    │   ├── product.py
-    │   ├── category.py
-    │   ├── invoice.py
-    │   ├── quote.py
-    │   ├── lead.py
-    │   ├── calendar.py
-    │   ├── client_service.py
-    │   └── activity_note.py
-    ├── services/                 # Lógica de negocio
-    │   ├── user.py
-    │   ├── client.py
-    │   ├── contact.py
-    │   ├── provider.py
-    │   ├── product.py
-    │   ├── category.py
-    │   ├── invoice.py
-    │   ├── calendar.py
-    │   ├── client_service.py
-    │   └── activity_note.py
-    └── api/                      # Capa de API (endpoints HTTP)
-        ├── api.py                # Router principal (incluye todos los routers)
-        └── endpoints/
-            ├── auth.py           # POST /login, GET /me
-            ├── users.py          # CRUD usuarios
-            ├── clients.py        # CRUD clientes
-            ├── contacts.py       # CRUD contactos
-            ├── providers.py      # CRUD proveedores
-            ├── products.py       # CRUD productos/servicios
-            ├── categories.py     # CRUD familias/categorías/subcategorías
-            ├── invoices.py       # CRUD facturas + estados + upload
-            ├── quotes.py         # CRUD presupuestos
-            ├── leads.py          # CRUD leads
-            ├── calendar.py       # CRUD eventos + notas
-            ├── client_services.py     # Servicios de clientes
-            ├── provider_services.py   # Servicios de proveedores
-            ├── service_payments.py    # Pagos de servicios
-            └── dashboard_config.py    # Config dashboard por usuario
-```
-
-### Frontend (`zrn-crm-fe`)
-
-```
-frontend/
-├── .gitignore
-├── package.json                  # Dependencias y scripts
-├── package-lock.json             # Lock de dependencias
-├── tsconfig.json                 # Configuración TypeScript base
-├── tsconfig.app.json             # Configuración TypeScript para app
-├── tsconfig.node.json            # Configuración TypeScript para Node
-├── vite.config.ts                # Configuración de Vite
-├── tailwind.config.js            # Configuración de TailwindCSS
-├── postcss.config.js             # Configuración de PostCSS
-├── eslint.config.js              # Configuración de ESLint
-├── index.html                    # HTML raíz
-├── public/                       # Archivos estáticos públicos
-│   └── vite.svg
-└── src/                          # Código fuente
-    ├── main.tsx                  # Entry point React
-    ├── App.tsx                   # Router principal y rutas
-    ├── App.css                   # Estilos globales adicionales
-    ├── index.css                 # Estilos base + TailwindCSS
-    ├── i18n.ts                   # Configuración de internacionalización
-    ├── api/
-    │   └── client.ts             # Cliente Axios (config API URL)
-    ├── context/
-    │   └── AuthContext.tsx        # Contexto de autenticación (JWT)
-    ├── components/
-    │   ├── Layout.tsx             # Layout principal (sidebar + contenido)
-    │   ├── ProtectedRoute.tsx     # Ruta protegida (requiere auth)
-    │   ├── SidebarItem.tsx        # Ítem del sidebar
-    │   ├── ClientServicesModal.tsx # Modal servicios de cliente
-    │   ├── ProviderServicesModal.tsx# Modal servicios de proveedor
-    │   ├── DashboardCustomizer.tsx # Personalizar widgets del dashboard
-    │   ├── HelpManual.tsx         # Manual de ayuda
-    │   └── NotificationBell.tsx   # Campana de notificaciones
-    ├── pages/
-    │   ├── Login.tsx              # Página de login
-    │   ├── Dashboard.tsx          # Dashboard con KPIs, gráficos, drag&drop
-    │   ├── Users.tsx              # Gestión de usuarios
-    │   ├── Leads.tsx              # Gestión de leads/prospectos
-    │   ├── LeadProfile.tsx        # Perfil detallado de lead
-    │   ├── Clients.tsx            # Gestión de clientes
-    │   ├── ClientProfile.tsx      # Perfil detallado de cliente
-    │   ├── Contacts.tsx           # Gestión de contactos
-    │   ├── Products.tsx           # Productos/Servicios/Mano de obra
-    │   ├── Categories.tsx         # Familias/Categorías/Subcategorías
-    │   ├── Providers.tsx          # Gestión de proveedores
-    │   ├── Quotes.tsx             # Presupuestos/Cotizaciones
-    │   ├── Billing.tsx            # Facturación (emitidas/recibidas)
-    │   ├── Finances.tsx           # Finanzas y reportes
-    │   ├── Calendar.tsx           # Calendario con notas y estados
-    │   └── Settings.tsx           # Configuración del sistema
-    ├── locales/
-    │   ├── en.json                # Traducciones inglés
-    │   └── es.json                # Traducciones español
-    └── assets/
-        └── react.svg              # Logo React
-```
-
----
-
-## 12. Módulos y Funcionalidades
-
-### 12.1 Autenticación
-- Login con email + password
-- Tokens JWT con expiración configurable (default: 8 horas)
-- Roles: `admin`, `user`
-- Rutas protegidas en frontend y backend
-
-### 12.2 Dashboard
-- KPIs dinámicos personalizables por usuario
-- Widgets arrastrables (drag & drop)
-- Gráficos de ingresos vs gastos (últimos 6 meses)
-- Distribución de cashflow
-- Costos de servicios por proveedor
-- Estado de facturas
-
-### 12.3 Leads (Prospectos)
-- Estados: `New`, `Contacted`, `Qualified`, `Converted`, `Lost`
-- Campos: empresa, contacto, email, teléfono, web, dirección, fuente, notas
-- Perfil detallado con historial
-
-### 12.4 Clientes
-- Datos fiscales: CUIT/DNI, condición tributaria
-- Nombre legal y nombre comercial
-- Dirección completa (calle, ciudad, provincia, país)
-- Perfil con contactos, servicios e historial
-- Estado activo/inactivo
-
-### 12.5 Contactos
-- Asociados a un cliente
-- Nombre, email, teléfono, cargo
-
-### 12.6 Proveedores
-- Nombre, email, teléfono, dirección, web
-- Servicios contratados con costos y ciclos de facturación
-
-### 12.7 Productos/Servicios
-- Tipos: Producto, Servicio, Mano de Obra
-- Clasificación jerárquica: Familia → Categoría → Subcategoría
-- Precio con moneda (ARS, USD, EUR)
-- Búsqueda, filtros y ordenamiento
-
-### 12.8 Categorías
-- Árbol jerárquico: Familias → Categorías → Subcategorías
-- CRUD completo con códigos
-- Búsqueda y filtrado
-
-### 12.9 Presupuestos (Quotes)
-- Número de presupuesto
-- Cliente asociado
-- Ítems con productos, cantidades y precios
-- Estados y moneda
-
-### 12.10 Facturación (Billing)
-- Facturas emitidas (a clientes) y recibidas (de proveedores)
-- Estados personalizables con colores
-- Ítems de factura vinculados a productos
-- Adjuntar archivos PDF
-- KPIs: Balance, Cobrado, Pendiente de cobro, Pagado, Pendiente de pago
-- Gráfico de revenue timeline por cliente
-
-### 12.11 Finanzas
-- Reportes financieros consolidados
-- Visualización de ingresos y gastos
-
-### 12.12 Calendario
-- Vista lista y vista mensual
-- Eventos con colores, estados y notas
-- Estados: Pendiente, Completado, Pospuesto, Cancelado
-- Follow-ups automáticos
-- Generación automática de facturas desde eventos de billing
-- Filtros por tipo y estado
-- Creación rápida de contactos
-
-### 12.13 Servicios de Proveedores
-- Nombre, estado (Active/Inactive/Cancelled)
-- Precios de costo y venta
-- Ciclo de facturación (Mensual, Bimensual, Anual, Único)
-- Moneda y fecha de expiración
-- Pagos registrados
-
-### 12.14 Configuración
-- Cambio de idioma (Español/Inglés)
-- Configuración de tasas de cambio USD/EUR
-- Gestión de perfil de usuario
-
----
-
-## 13. API Endpoints
-
-Base URL: `/api/v1`
-
-### Autenticación
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `POST` | `/auth/login` | Iniciar sesión |
-| `GET` | `/auth/me` | Obtener usuario actual |
-
-### Usuarios
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/users/` | Listar usuarios |
-| `POST` | `/users/` | Crear usuario |
-| `PUT` | `/users/{id}` | Actualizar usuario |
-| `DELETE` | `/users/{id}` | Eliminar usuario |
-
-### Clientes
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/clients/` | Listar clientes |
-| `POST` | `/clients/` | Crear cliente |
-| `GET` | `/clients/{id}` | Obtener cliente |
-| `PUT` | `/clients/{id}` | Actualizar cliente |
-| `DELETE` | `/clients/{id}` | Eliminar cliente |
-
-### Contactos
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/contacts/` | Listar contactos |
-| `POST` | `/contacts/` | Crear contacto |
-| `PUT` | `/contacts/{id}` | Actualizar contacto |
-| `DELETE` | `/contacts/{id}` | Eliminar contacto |
-
-### Proveedores
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/providers/` | Listar proveedores |
-| `POST` | `/providers/` | Crear proveedor |
-| `PUT` | `/providers/{id}` | Actualizar proveedor |
-| `DELETE` | `/providers/{id}` | Eliminar proveedor |
-
-### Productos
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/products/` | Listar productos |
-| `POST` | `/products/` | Crear producto |
-| `PUT` | `/products/{id}` | Actualizar producto |
-| `DELETE` | `/products/{id}` | Eliminar producto |
-
-### Categorías
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/categories/` | Listar categorías |
-| `GET` | `/categories/tree` | Árbol completo (Familia → Cat → Sub) |
-| `POST` | `/categories/` | Crear categoría |
-| `PUT` | `/categories/{id}` | Actualizar categoría |
-| `DELETE` | `/categories/{id}` | Eliminar categoría |
-
-### Facturas
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/invoices/` | Listar facturas |
-| `POST` | `/invoices/` | Crear factura |
-| `PUT` | `/invoices/{id}` | Actualizar factura |
-| `DELETE` | `/invoices/{id}` | Eliminar factura |
-| `POST` | `/invoices/{id}/upload` | Subir archivo PDF |
-| `GET` | `/invoices/statuses` | Listar estados |
-| `POST` | `/invoices/statuses/` | Crear estado |
-| `PUT` | `/invoices/statuses/{id}` | Actualizar estado |
-| `DELETE` | `/invoices/statuses/{id}` | Eliminar estado |
-
-### Presupuestos
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/quotes/` | Listar presupuestos |
-| `POST` | `/quotes/` | Crear presupuesto |
-| `PUT` | `/quotes/{id}` | Actualizar presupuesto |
-| `DELETE` | `/quotes/{id}` | Eliminar presupuesto |
-
-### Leads
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/leads/` | Listar leads |
-| `POST` | `/leads/` | Crear lead |
-| `GET` | `/leads/{id}` | Obtener lead |
-| `PUT` | `/leads/{id}` | Actualizar lead |
-| `DELETE` | `/leads/{id}` | Eliminar lead |
-
-### Calendario
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/calendar/` | Listar eventos |
-| `POST` | `/calendar/` | Crear evento |
-| `PUT` | `/calendar/{id}` | Actualizar evento |
-| `DELETE` | `/calendar/{id}` | Eliminar evento |
-| `POST` | `/calendar/{id}/notes` | Agregar nota |
-| `PUT` | `/calendar/{id}/notes/{noteId}` | Editar nota |
-| `DELETE` | `/calendar/{id}/notes/{noteId}` | Eliminar nota |
-
-### Servicios
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/provider-services/` | Listar servicios de proveedores |
-| `POST` | `/provider-services/` | Crear servicio |
-| `PUT` | `/provider-services/{id}` | Actualizar servicio |
-| `DELETE` | `/provider-services/{id}` | Eliminar servicio |
-| `GET` | `/client-services/` | Listar servicios de clientes |
-
-### Dashboard
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/dashboard-config/{userId}` | Obtener config de widgets |
-| `PUT` | `/dashboard-config/{userId}` | Guardar config de widgets |
-
-### Health Check
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/health` | Estado del servidor |
-
-### Documentación interactiva
-- **Swagger UI**: `https://tudominio.com/docs`
-- **OpenAPI JSON**: `https://tudominio.com/openapi.json`
-
----
-
-## 14. Internacionalización (i18n)
-
-El sistema soporta **Español** e **Inglés** completamente.
-
-- Idioma por defecto: **Español**
-- El usuario puede cambiar el idioma desde **Settings**
-- La preferencia se guarda en `localStorage`
-- Archivos de traducción: `src/locales/en.json` y `src/locales/es.json`
-
----
-
-## 15. Variables de Entorno
-
-### Backend (`.env`)
+### Backend (`backend/.env`)
 
 | Variable | Descripción | Ejemplo |
 |----------|-------------|---------|
-| `DATABASE_URL` | URL de conexión PostgreSQL | `postgresql://user:pass@localhost:5432/zeron_crm` |
-| `SECRET_KEY` | Clave secreta para firmar JWT | `clave-random-segura-base64` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Duración del token JWT (minutos) | `480` (8 horas) |
+| `DATABASE_URL` | Conexión PostgreSQL | `postgresql://zeron_user:zeron_password@localhost:5432/zeron_crm` |
+| `SECRET_KEY` | Clave para JWT tokens (64+ chars) | `ET5aLUQ...` (generada con `secrets.token_urlsafe(48)`) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Duración de sesión en minutos | `480` (8 horas) |
 
-### Frontend
+### WhatsApp Service
 
-No requiere variables de entorno. La URL de la API se determina automáticamente:
-- **Producción**: `/api/v1` (reverse proxy Apache)
-- **Desarrollo**: `http://localhost:8000/api/v1`
+Las credenciales de PostgreSQL están hardcodeadas en `whatsapp-service/server.js`:
+```javascript
+const pool = new Pool({
+    host: 'localhost',
+    port: 5432,
+    database: 'zeron_crm',
+    user: 'zeron_user',
+    password: 'zeron_password',
+});
+```
+
+> En producción, se recomienda mover estas credenciales a variables de entorno.
 
 ---
 
-## 16. Comandos Útiles
+## 13. Estructura del Proyecto
 
-### Backend
+```
+zrn-crm/
+├── docker-compose.yml          # PostgreSQL container
+├── INSTALL.md                  # Este manual
+├── .gitignore
+│
+├── backend/                    # API FastAPI (Python)
+│   ├── .env                    # Variables de entorno (NO se sube a git)
+│   ├── requirements.txt        # Dependencias Python
+│   ├── venv/                   # Entorno virtual (NO se sube a git)
+│   ├── uploads/                # Archivos subidos (facturas PDF, etc.)
+│   └── app/
+│       ├── main.py             # Entry point FastAPI
+│       ├── database.py         # Conexión SQLAlchemy
+│       ├── core/
+│       │   └── config.py       # Settings (Pydantic)
+│       ├── models/             # Modelos SQLAlchemy
+│       │   ├── user.py
+│       │   ├── client.py
+│       │   ├── lead.py
+│       │   ├── quote.py
+│       │   ├── product.py
+│       │   ├── invoice.py
+│       │   ├── employee.py
+│       │   ├── time_entry.py
+│       │   ├── payroll.py
+│       │   └── ...
+│       ├── api/
+│       │   ├── api.py          # Router principal
+│       │   └── endpoints/      # Endpoints por módulo
+│       │       ├── users.py
+│       │       ├── clients.py
+│       │       ├── leads.py
+│       │       ├── quotes.py
+│       │       ├── billing.py
+│       │       ├── arca.py     # Integración ARCA/AFIP
+│       │       ├── employees.py
+│       │       ├── time_entries.py
+│       │       ├── payroll.py
+│       │       ├── dashboards.py
+│       │       └── ...
+│       ├── schemas/            # Schemas Pydantic
+│       └── services/           # Lógica de negocio
+│           ├── invoice_pdf_service.py
+│           └── arca_service.py
+│
+├── frontend/                   # React SPA (TypeScript)
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── index.html
+│   ├── dist/                   # Build de producción (NO se sube a git)
+│   ├── node_modules/           # Dependencias (NO se sube a git)
+│   ├── public/
+│   └── src/
+│       ├── App.tsx             # Router principal
+│       ├── main.tsx            # Entry point
+│       ├── api/
+│       │   └── client.ts       # Axios instance
+│       ├── context/
+│       │   └── AuthContext.tsx  # Autenticación JWT
+│       ├── components/
+│       │   ├── Layout.tsx      # Sidebar + Header
+│       │   ├── HeaderClock.tsx  # Reloj de fichadas
+│       │   └── ...
+│       ├── pages/
+│       │   ├── Home.tsx        # Página de inicio v3.0.0
+│       │   ├── Dashboard.tsx   # Panel de control
+│       │   ├── DashboardHub.tsx # 8 dashboards BI
+│       │   ├── Leads.tsx
+│       │   ├── Clients.tsx
+│       │   ├── Billing.tsx     # Facturación ARCA
+│       │   ├── Employees.tsx
+│       │   ├── TimeTracking.tsx
+│       │   ├── Payroll.tsx     # Liquidación de sueldos
+│       │   └── ... (30+ páginas)
+│       └── i18n/               # Traducciones ES/EN
+│
+└── whatsapp-service/           # Microservicio WhatsApp
+    ├── package.json
+    └── server.js               # Express + whatsapp-web.js + WebSocket
+```
 
+---
+
+## 14. Comandos Útiles
+
+### Servicios
 ```bash
-# Iniciar en modo desarrollo
-cd /home/ubuntu/zrn-crm/backend
-source venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Ver estado de todos los servicios
+sudo systemctl status zeron-crm-api.service
+sudo systemctl status zeron-whatsapp.service
 
-# Crear una nueva migración
-alembic revision --autogenerate -m "descripción del cambio"
+# Reiniciar backend
+sudo systemctl restart zeron-crm-api.service
 
-# Aplicar migraciones pendientes
-alembic upgrade head
+# Ver logs del backend
+sudo journalctl -u zeron-crm-api.service -f --no-pager
 
-# Revertir última migración
-alembic downgrade -1
+# Ver logs de WhatsApp
+sudo journalctl -u zeron-whatsapp.service -f --no-pager
+```
 
-# Ver historial de migraciones
-alembic history
+### Base de Datos
+```bash
+# Conectar a PostgreSQL
+docker exec -it zeron_crm_db psql -U zeron_user -d zeron_crm
 
-# Ver status de migraciones
-alembic current
+# Backup de la base de datos
+docker exec zeron_crm_db pg_dump -U zeron_user zeron_crm > backup_$(date +%Y%m%d).sql
+
+# Restaurar backup
+docker exec -i zeron_crm_db psql -U zeron_user -d zeron_crm < backup_20260306.sql
 ```
 
 ### Frontend
-
 ```bash
-# Iniciar en modo desarrollo
+# Compilar y desplegar frontend (workflow completo)
+sudo systemctl stop zeron-crm-api.service
 cd /home/ubuntu/zrn-crm/frontend
-npm run dev
-
-# Build de producción
-npm run build
-
-# Preview del build
-npm run preview
-
-# Lint del código
-npm run lint
-```
-
-### Servicios del sistema
-
-```bash
-# Backend API
-sudo systemctl start zeron-crm-api      # Iniciar
-sudo systemctl stop zeron-crm-api       # Detener
-sudo systemctl restart zeron-crm-api    # Reiniciar
-sudo systemctl status zeron-crm-api     # Ver estado
-sudo journalctl -u zeron-crm-api -f     # Ver logs en tiempo real
-
-# Apache
-sudo systemctl restart apache2
-sudo apache2ctl configtest              # Verificar config
-sudo tail -f /var/log/apache2/zeron_crm_error.log    # Ver error log
-sudo tail -f /var/log/apache2/zeron_crm_access.log   # Ver access log
-
-# PostgreSQL
-sudo systemctl status postgresql
-sudo -u postgres psql -d zeron_crm      # Conectar a la BD
-```
-
-### Despliegue rápido (actualizar frontend)
-
-```bash
-cd /home/ubuntu/zrn-crm/frontend
-git pull
-npm install
-npm run build
+rm -rf dist node_modules/.vite
+NODE_OPTIONS="--max-old-space-size=3072" npm run build
 sudo rm -rf /var/www/html/zeron-crm/*
 sudo cp -r dist/* /var/www/html/zeron-crm/
+sudo chown -R www-data:www-data /var/www/html/zeron-crm/
+sudo systemctl start zeron-crm-api.service
 ```
 
-### Despliegue rápido (actualizar backend)
-
+### Git
 ```bash
-cd /home/ubuntu/zrn-crm/backend
-git pull
-source venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-deactivate
-sudo systemctl restart zeron-crm-api
+# Subir cambios
+cd /home/ubuntu/zrn-crm
+git add -A
+git commit -m "Descripción del cambio"
+git push
 ```
 
 ---
 
-## 17. Solución de Problemas
+## 15. Solución de Problemas
 
-### El backend no inicia
+### El build del frontend falla con "Killed" (OOM)
+
+El build de Vite puede consumir mucha memoria. Soluciones:
+
+1. **Detener el API antes de compilar**:
+   ```bash
+   sudo systemctl stop zeron-crm-api.service
+   ```
+
+2. **Agregar swap** si no existe:
+   ```bash
+   sudo fallocate -l 2G /swapfile
+   sudo chmod 600 /swapfile
+   sudo mkswap /swapfile
+   sudo swapon /swapfile
+   ```
+
+3. **Limitar la memoria de Node**:
+   ```bash
+   NODE_OPTIONS="--max-old-space-size=3072" npm run build
+   ```
+
+4. **Usar el script de build**:
+   ```bash
+   bash /tmp/build_deploy.sh
+   ```
+
+### La API no inicia
+
 ```bash
-# Ver logs detallados
-sudo journalctl -u zeron-crm-api -n 50 --no-pager
+# Ver error específico
+sudo journalctl -u zeron-crm-api.service -n 50 --no-pager
 
-# Verificar que PostgreSQL está corriendo
-sudo systemctl status postgresql
+# Verificar que la DB está corriendo
+docker ps | grep zeron_crm_db
 
-# Probar la conexión manualmente
+# Probar manualmente
 cd /home/ubuntu/zrn-crm/backend
 source venv/bin/activate
-python3 -c "from app.database import engine; engine.connect(); print('✅ DB OK')"
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### Error 502 Bad Gateway
-```bash
-# El backend no está corriendo
-sudo systemctl start zeron-crm-api
+### Error 502 Bad Gateway en Apache
 
-# Verificar que escucha en el puerto 8000
-curl http://127.0.0.1:8000/health
+El backend no está corriendo:
+```bash
+sudo systemctl start zeron-crm-api.service
+sudo systemctl status zeron-crm-api.service
 ```
 
-### El frontend muestra página en blanco
+### La página muestra una versión vieja después del deploy
+
+Caché del navegador. Solución:
+- **Ctrl+Shift+R** (hard reload)
+- El `index.html` tiene headers `no-cache` configurados en Apache
+
+### WhatsApp no conecta
+
 ```bash
-# Verificar que el build existe
-ls /var/www/html/zeron-crm/
+# Ver logs
+sudo journalctl -u zeron-whatsapp.service -n 50
 
-# Verificar permisos
-ls -la /var/www/html/zeron-crm/
+# Verificar que Chromium está instalado
+chromium-browser --version
 
-# Re-desplegar
-cd /home/ubuntu/zrn-crm/frontend
-npm run build
-sudo cp -r dist/* /var/www/html/zeron-crm/
+# Limpiar sesión anterior
+rm -rf /home/ubuntu/zrn-crm/whatsapp-service/.wwebjs_auth
+sudo systemctl restart zeron-whatsapp.service
 ```
 
-### Error de CORS
-Si estás en desarrollo local, el backend permite CORS desde todos los orígenes (`allow_origins=["*"]`). Para producción, esto se maneja con el reverse proxy de Apache.
+### Error de permisos en uploads
 
-### Migraciones fallidas
 ```bash
-# Ver el estado actual
-alembic current
-
-# Forzar a un estado específico
-alembic stamp head
-
-# Generar nueva migración
-alembic revision --autogenerate -m "fix migration"
-alembic upgrade head
+mkdir -p /home/ubuntu/zrn-crm/backend/uploads/invoices
+chown -R ubuntu:ubuntu /home/ubuntu/zrn-crm/backend/uploads
 ```
 
 ---
 
-> 📝 **Nota:** Este documento cubre la instalación completa del sistema Zeron CRM. Para preguntas o soporte, contacta al equipo de Zeron en el repositorio de GitHub.
+## Módulos Incluidos en ZRN360° v3.0.0
+
+| Módulo | Funcionalidades |
+|--------|----------------|
+| **Panel de Control** | Dashboard principal, Centro BI (8 dashboards), Notas rápidas |
+| **CRM** | Leads, Presupuestos, Cuentas, Proveedores, Contactos, Calendario, Soporte, Vendedores |
+| **Proyectos** | Tableros Kanban, Wiki/Documentación |
+| **RRHH** | Legajos digitales, Fichadas con reloj, Liquidación de sueldos (ley argentina) |
+| **Comunicaciones** | Email corporativo, WhatsApp Business |
+| **ERP/Contabilidad** | Facturación ARCA/AFIP, Remitos, Órdenes de pago/compra, Inventario, Depósitos, Tipo de cambio |
+| **Catálogo** | Productos/Servicios/Mano de obra, Categorías jerárquicas |
+| **Sistema** | Usuarios, Roles y Permisos granulares, Configuración |
+
+---
+
+*ZRN360° — Gestión empresarial integral*
