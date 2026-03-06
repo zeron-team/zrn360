@@ -1,0 +1,45 @@
+2026/03/04-18:25:52.551 3ccac Reusing MANIFEST /home/ubuntu/zrn-crm/whatsapp-service/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/04-18:25:52.551 3ccac Recovering log #177
+2026/03/04-18:25:52.614 3ccac Reusing old log /home/ubuntu/zrn-crm/whatsapp-service/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000177.log 
+2026/03/04-19:13:44.759 3cca7 Level-0 table #188: started
+2026/03/04-19:13:44.795 3cca7 Level-0 table #188: 1253882 bytes OK
+2026/03/04-19:13:44.798 3cca7 Delete type=0 #177
+2026/03/04-19:14:40.364 3cca5 Compacting 1@1 + 7@2 files
+2026/03/04-19:14:40.472 3cca5 Generated table #189@1: 53151 keys, 2191259 bytes
+2026/03/04-19:14:40.567 3cca5 Generated table #190@1: 106556 keys, 2258645 bytes
+2026/03/04-19:14:40.627 3cca5 Generated table #191@1: 42720 keys, 2210968 bytes
+2026/03/04-19:14:40.656 3cca5 Generated table #192@1: 3441 keys, 2165389 bytes
+2026/03/04-19:14:40.711 3cca5 Generated table #193@1: 11289 keys, 2177799 bytes
+2026/03/04-19:14:40.833 3cca5 Generated table #194@1: 29033 keys, 2260356 bytes
+2026/03/04-19:14:40.854 3cca5 Generated table #195@1: 8003 keys, 691163 bytes
+2026/03/04-19:14:40.854 3cca5 Compacted 1@1 + 7@2 files => 13955579 bytes
+2026/03/04-19:14:40.855 3cca5 compacted to: files[ 0 0 7 0 0 0 0 ]
+2026/03/04-19:14:40.855 3cca5 Delete type=2 #181
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #185
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #188
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #183
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #180
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #184
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #179
+2026/03/04-19:14:40.856 3cca5 Delete type=2 #182
+2026/03/05-02:06:24.502 3cca7 Level-0 table #197: started
+2026/03/05-02:06:24.536 3cca7 Level-0 table #197: 1277830 bytes OK
+2026/03/05-02:06:24.539 3cca7 Delete type=0 #187
+2026/03/05-02:23:09.739 3cca7 Compacting 1@1 + 7@2 files
+2026/03/05-02:23:09.814 3cca7 Generated table #198@1: 52449 keys, 2191117 bytes
+2026/03/05-02:23:09.908 3cca7 Generated table #199@1: 106498 keys, 2258986 bytes
+2026/03/05-02:23:09.972 3cca7 Generated table #200@1: 46144 keys, 2212509 bytes
+2026/03/05-02:23:10.000 3cca7 Generated table #201@1: 3410 keys, 2165503 bytes
+2026/03/05-02:23:10.036 3cca7 Generated table #202@1: 9403 keys, 2169359 bytes
+2026/03/05-02:23:10.123 3cca7 Generated table #203@1: 30237 keys, 2263998 bytes
+2026/03/05-02:23:10.154 3cca7 Generated table #204@1: 9785 keys, 939989 bytes
+2026/03/05-02:23:10.154 3cca7 Compacted 1@1 + 7@2 files => 14201461 bytes
+2026/03/05-02:23:10.156 3cca7 compacted to: files[ 0 0 7 0 0 0 0 ]
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #192
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #197
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #195
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #191
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #189
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #193
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #194
+2026/03/05-02:23:10.157 3cca7 Delete type=2 #190

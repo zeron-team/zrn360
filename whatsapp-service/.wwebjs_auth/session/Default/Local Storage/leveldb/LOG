@@ -1,0 +1,6 @@
+2026/03/04-18:25:51.841 3ccac Reusing MANIFEST /home/ubuntu/zrn-crm/whatsapp-service/.wwebjs_auth/session/Default/Local Storage/leveldb/MANIFEST-000001
+2026/03/04-18:25:51.842 3ccac Recovering log #3
+2026/03/04-18:25:51.843 3ccac Reusing old log /home/ubuntu/zrn-crm/whatsapp-service/.wwebjs_auth/session/Default/Local Storage/leveldb/000003.log 
+2026/03/04-22:46:13.491 3cca7 Level-0 table #5: started
+2026/03/04-22:46:13.494 3cca7 Level-0 table #5: 17382 bytes OK
+2026/03/04-22:46:13.495 3cca7 Delete type=0 #3
